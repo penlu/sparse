@@ -26,20 +26,18 @@ rule main = parse
     let fields = String.split_on_char '.' s
       |> List.map int_of_string in
     IPV4 fields }
-| "::" hex+ (ipv6sep hex+)*
-  { let s = Lexing.lexeme lexbuf in
-    let s = String.sub s 2 (String.length s - 2) in
-    let fields = String.split_on_char ':' s
+| "::" (hex+ (ipv6sep hex+)* as s)
+  { let fields = String.split_on_char ':' s
       |> List.map (fun s -> int_of_string ("0x"^s)) in
     let zeros = List.init (7 - List.length fields) (fun _ -> 0) in
     IPV6 (zeros @ fields) }
-| hex+ (ipv6sep hex+)+
-  { let s = Lexing.lexeme lexbuf in
-    let fields = String.split_on_char ':' s in
+| (hex+ (ipv6sep hex+)+ as s)
+  { let fields = String.split_on_char ':' s in
     let zeros = List.init (7 - List.length fields) (fun _ -> 0) in
     IPV6 (List.map (fun s ->
       if s = "" then zeros
       else [int_of_string ("0x"^s)]) fields |> List.concat) }
+| "or" { ORLIT }
 | ['A'-'Z''a'-'z''_']['A'-'Z''a'-'z''0'-'9''_']*
   { ID (Lexing.lexeme lexbuf) }
 | '\n' { Lexing.new_line lexbuf; NEWLINE }
@@ -49,8 +47,8 @@ rule main = parse
 | '}' { RBRACE }
 | '[' { LBRACKET }
 | ']' { RBRACKET }
-| '<' { LANGLE }
-| '>' { RANGLE }
+| '<' { LT }
+| '>' { GT }
 | '.' { DOT }
 | ',' { COMMA }
 | '=' { EQUAL }
@@ -59,17 +57,18 @@ rule main = parse
 | '~' { TILDE }
 | '?' { QUES }
 | '*' { STAR }
+| '@' { AT }
+| "<<" { LTLT }
 | "&&" { ANDAND }
+| "==" { EQUALEQUAL }
 | "->" { RARROW }
 | "..." { DOTDOTDOT }
 | "---" { DASHDASHDASH }
 | "+++" { PLUSPLUSPLUS }
 | "<unfinished ...>" { UNFINISHED }
 | "exited with" { EXITED }
-| "<... "['A'-'Z''a'-'z''0'-'9''_']*" resumed>"
-  { let s = Lexing.lexeme lexbuf in
-    let c = String.sub s 5 (String.length s - 14) in
-    RESUMED c }
+| "<... " (['A'-'Z''a'-'z''0'-'9''_']* as s) " resumed>"
+  { RESUMED s }
 | eof { EOF }
 
 and read_string buf = parse
@@ -82,15 +81,13 @@ and read_string buf = parse
 | "\\v" { Buffer.add_char buf '\013'; read_string buf lexbuf }
 | "\\\"" { Buffer.add_char buf '"'; read_string buf lexbuf }
 | "\\\\" { Buffer.add_char buf '\\'; read_string buf lexbuf }
-| '\\' ['0'-'3'] ['0'-'7'] ['0'-'7']
-| '\\' ['0'-'7'] ['0'-'7']
-| '\\' ['0'-'7']
-  { let s = Lexing.lexeme lexbuf in
-    Buffer.add_char buf (Char.chr (int_of_string ("0o"^tail s 1)));
+| '\\' (['0'-'3'] ['0'-'7'] ['0'-'7'] as s)
+| '\\' (['0'-'7'] ['0'-'7'] as s)
+| '\\' (['0'-'7'] as s)
+  { Buffer.add_char buf (Char.chr (int_of_string ("0o"^s)));
     read_string buf lexbuf }
-| "\\x" ['0'-'9''a'-'f']['0'-'9''a'-'f']
-  { let s = Lexing.lexeme lexbuf in
-    Buffer.add_char buf (Char.chr (int_of_string ("0"^tail s 1)));
+| "\\" ('x' ['0'-'9''a'-'f']['0'-'9''a'-'f'] as s)
+  { Buffer.add_char buf (Char.chr (int_of_string ("0"^s)));
     read_string buf lexbuf }
 | [^ '"' '\\']+
   { Buffer.add_string buf (Lexing.lexeme lexbuf);

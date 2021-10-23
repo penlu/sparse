@@ -8,11 +8,10 @@
 %token <int list> IPV4 IPV6
 %token <string> STRING ID RESUMED
 %token NEWLINE EOF
-%token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET LANGLE RANGLE
-%token DOT COMMA EQUAL PIPE DASH TILDE QUES STAR RARROW ANDAND
-%token DOTDOTDOT DASHDASHDASH PLUSPLUSPLUS UNFINISHED EXITED
-
-%right PIPE STAR
+%token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET LT GT
+%token DOT COMMA EQUAL PIPE DASH TILDE QUES STAR AT LTLT ORLIT
+%token RARROW ANDAND EQUALEQUAL DOTDOTDOT DASHDASHDASH PLUSPLUSPLUS
+%token UNFINISHED EXITED
 
 %start <syscall list> main
 
@@ -25,7 +24,7 @@ main:
 
 syscall:
 | pid=DECNUM ts=time name=ID LPAREN aa=args RPAREN
-  EQUAL retval=value err=errno c=comment d=duration
+  EQUAL retval=atom err=errno c=comment d=duration
   { { stype=SFull; pid=pid; timestamp=ts;
       name=Some name; args=Some aa; duration=d;
       retval=Some retval; errno=err; comment=c;
@@ -36,13 +35,13 @@ syscall:
       retval=None; errno=None; comment=None;
       exitcode=None; } }
 | pid=DECNUM ts=time name=RESUMED aa=args RPAREN
-  EQUAL retval=value err=errno c=comment d=duration
+  EQUAL retval=atom err=errno c=comment d=duration
   { { stype=SPost; pid=pid; timestamp=ts; duration=d;
       name=Some name; args=Some aa;
       retval=Some retval; errno=err; comment=c;
       exitcode=None; } }
 | pid=DECNUM ts=time name=RESUMED UNFINISHED RPAREN
-  EQUAL retval=value err=errno c=comment d=duration
+  EQUAL retval=atom err=errno c=comment d=duration
   { { stype=SPrePost; pid=pid; timestamp=ts; duration=d;
       name=Some name; args=None;
       retval=Some retval; errno=err; comment=c;
@@ -72,10 +71,11 @@ comments:
 | x=ID c=comments { x^" "^c }
 | PIPE c=comments { "|"^c }
 | DASH c=comments { "-"^c }
+| ORLIT c=comments { " or "^c }
 
 duration:
 | { None }
-| LANGLE t=time RANGLE { Some t }
+| LT t=time GT { Some t }
 
 time:
 | t1=DECNUM DOT t2=DECNUM { Int64.add (Int64.mul t1 1000000L) t2 }
@@ -87,19 +87,28 @@ args:
 | { [] }
 
 arg:
-| v=value { ArgV v }
-| k=ID EQUAL v=value { ArgKV (k, v) }
-| x=ID LPAREN aa=args RPAREN { ArgV (ValueCall (x, aa)) }
-| k=ID EQUAL x=ID LPAREN aa=args RPAREN { ArgKV (k, ValueCall (x, aa)) }
+| DOTDOTDOT { ArgIncomplete }
+| v=op_value { ArgV v }
+| k=ID EQUAL v=op_value { ArgKV (k, v) }
+| k=ID LBRACKET i=value RBRACKET EQUAL v=op_value
+  { ArgIndex (k, i, v) }
 
-value:
+atom:
 | QUES { ValueQues }
-| s=STRING { ValueString s }
-| s=STRING DOTDOTDOT { ValuePString s }
 | n=OCTNUM { ValueOctnum n }
 | n=DECNUM { ValueDecnum n }
 | n=HEXNUM { ValueHexnum n }
+| v=IPV4 { ValueIpv4 v }
+| v=IPV6 { ValueIpv6 v }
 | x=ID { ValueId x }
+
+value:
+| v=atom { v }
+| s=STRING { ValueString s }
+| s=STRING DOTDOTDOT { ValuePString s }
+| AT s=STRING { ValueAString s }
+| x=ID LPAREN aa=args RPAREN { ValueCall (x, aa) }
+| v1=DECNUM RARROW v2=DECNUM { ValueArrow (v1, v2) }
 | LBRACKET v=value_array RBRACKET
   { match v with
     | (IsArray, v) -> ValueArray v
@@ -107,32 +116,39 @@ value:
 | TILDE LBRACKET v=value_array RBRACKET
   { let (_, v) = v in ValueBitset (true, v) }
 | LBRACE aa=args RBRACE { ValueStruct aa }
-| LBRACE aa=args DOTDOTDOT RBRACE { ValuePStruct aa }
-| v1=value PIPE v2=value
-  { match v2 with
-    | ValueFlagset v2 -> ValueFlagset (v1 :: v2)
-    | _ -> ValueFlagset (v1 :: [v2]) }
-| v1=value STAR v2=value
-  { match v2 with
-    | ValueProduct v2 -> ValueProduct (v1 :: v2)
-    | _ -> ValueProduct (v1 :: [v2]) }
-| v1=DECNUM RARROW v2=DECNUM { ValueArrow (v1, v2) }
-| LBRACKET LBRACE ww=wstatuses RBRACE RBRACKET { ValueWstatus ww }
-| v=IPV4 { ValueIpv4 v }
-| v=IPV6 { ValueIpv6 v }
 
-value_array:
-| v=value COMMA vv=value_array
-  { let (atype, vv) = vv in (atype, v :: vv) }
-| v=value vv=value_array
-  { let (_, vv) = vv in (IsBitset, v :: vv) }
-| { (IsArray, []) }
+op_value:
+| v=lshift_value { v }
+| DASH v=value { ValueNeg v }
+| v1=value EQUALEQUAL v2=value { ValueWstatus [(v1, Some v2)] }
+| v1=lshift_value PIPE v2=pipe_value { ValueFlagset (v1 :: v2) }
+| v1=value STAR v2=star_value { ValueProduct (v1 :: v2) }
+| v1=wstatus ANDAND v2=and_value { ValueWstatus (v1 :: v2) }
+| v1=value ORLIT v2=value { ValueOr (v1, v2) }
 
-wstatuses:
-| w=wstatus ANDAND ww=wstatuses { w :: ww }
-| w=wstatus { [w] }
+lshift_value:
+| v=value { v }
+| v1=value LTLT v2=value { ValueLshift (v1, v2) }
+
+pipe_value:
+| v1=lshift_value PIPE v2=pipe_value { v1 :: v2 }
+| v=lshift_value { [v] }
+
+star_value:
+| v1=value STAR v2=star_value { v1 :: v2 }
+| v=value { [v] }
+
+and_value:
+| v1=wstatus ANDAND v2=and_value { v1 :: v2 }
+| v=wstatus { [v] }
 
 wstatus:
-| w=ID LPAREN s=ID RPAREN { assert (s = "s"); (w, None) }
-| w=ID LPAREN s=ID RPAREN EQUAL EQUAL v=DECNUM
-  { assert (s = "s"); (w, Some v) }
+| v=value { (v, None) }
+| v1=value EQUALEQUAL v2=value { (v1, Some v2) }
+
+value_array:
+| v=op_value COMMA vv=value_array
+  { let (atype, vv) = vv in (atype, v :: vv) }
+| v=op_value vv=value_array
+  { let (_, vv) = vv in (IsBitset, v :: vv) }
+| { (IsArray, []) }
