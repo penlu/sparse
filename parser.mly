@@ -6,12 +6,12 @@
 
 %token <int64> OCTNUM DECNUM HEXNUM
 %token <int list> IPV4 IPV6
-%token <string> STRING ID RESUMED
+%token <string> STRING ID RESUMED RESUMING
 %token NEWLINE EOF
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET LT GT
-%token DOT COMMA EQUAL PIPE DASH TILDE QUES STAR AT LTLT ORLIT
+%token DOT COMMA EQUAL PIPE DASH TILDE QUES STAR AT LTLT ORLIT SLASH
 %token RARROW ANDAND EQUALEQUAL DOTDOTDOT DASHDASHDASH PLUSPLUSPLUS
-%token UNFINISHED EXITED
+%token UNFINISHED EXITED KILLED
 
 %start <syscall list> main
 
@@ -46,6 +46,12 @@ syscall:
       name=Some name; args=None;
       retval=Some retval; errno=err; comment=c;
       exitcode=None; } }
+| pid=DECNUM ts=time restart=ID LPAREN name=RESUMING UNFINISHED
+  { assert (restart = "restart_syscall");
+    { stype=SRestart; pid=pid; timestamp=ts;
+      name=Some name; args=None; duration=None;
+      retval=None; errno=None; comment=None;
+      exitcode=None; } }
 | pid=DECNUM ts=time PLUSPLUSPLUS EXITED code=DECNUM PLUSPLUSPLUS
   { { stype=SExit; pid=pid; timestamp=ts;
       name=None; args=None; duration=None;
@@ -54,6 +60,11 @@ syscall:
 | pid=DECNUM ts=time DASHDASHDASH signal=ID LBRACE aa=args RBRACE DASHDASHDASH
   { { stype=SSig; pid=pid; timestamp=ts;
       name=Some signal; args=Some aa; duration=None;
+      retval=None; errno=None; comment=None;
+      exitcode=None; } }
+| pid=DECNUM ts=time KILLED
+  { { stype=SKill; pid=pid; timestamp=ts;
+      name=None; args=None; duration=None;
       retval=None; errno=None; comment=None;
       exitcode=None; } }
 
@@ -72,6 +83,7 @@ comments:
 | PIPE c=comments { "|"^c }
 | DASH c=comments { "-"^c }
 | ORLIT c=comments { " or "^c }
+| SLASH c=comments { "/"^c }
 
 duration:
 | { None }

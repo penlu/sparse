@@ -27,7 +27,15 @@ and arg =
 | ArgKV of string * value
 | ArgIndex of string * value * value
 
-type stype = SFull | SPre | SPost | SExit | SSig | SPrePost
+type stype =
+| SFull
+| SPre
+| SPost
+| SExit
+| SSig
+| SPrePost
+| SRestart
+| SKill
 
 (* times are in microseconds *)
 type syscall = {

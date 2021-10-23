@@ -4,6 +4,8 @@
   exception SyntaxError of string
 
   let tail s n = String.sub s n (String.length s - n)
+
+  type lexstate = LexNormal | LexPost
 }
 
 let hex = ['0'-'9''a'-'f''A'-'F']
@@ -57,6 +59,7 @@ rule main = parse
 | '~' { TILDE }
 | '?' { QUES }
 | '*' { STAR }
+| '/' { SLASH }
 | '@' { AT }
 | "<<" { LTLT }
 | "&&" { ANDAND }
@@ -69,6 +72,9 @@ rule main = parse
 | "exited with" { EXITED }
 | "<... " (['A'-'Z''a'-'z''0'-'9''_']* as s) " resumed>"
   { RESUMED s }
+| "<... resuming interrupted " (['A'-'Z''a'-'z''0'-'9''_']* as s) " ...>"
+  { RESUMING s }
+| "+++ killed by SIGKILL +++" { KILLED }
 | eof { EOF }
 
 and read_string buf = parse
