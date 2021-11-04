@@ -1,3 +1,6 @@
+open Syscall
+open Trace
+
 let opts = []
 let file: string option ref = ref None
 
@@ -28,6 +31,25 @@ let read input =
     Error ("parse error at "^string_of_lexbuf_p lexbuf^
       " with token "^Lexing.lexeme lexbuf)
 
+let print_syscall s =
+  let name = match s.name with
+    | Some name -> name
+    | None -> failwith "nameless syscall" in
+  let pid = Int64.to_string s.pid in
+  Printf.printf "(%s %s)\n" pid name
+
+let process trace =
+  let full_trace = merge_traces (split_trace trace) in
+  List.iter (fun s -> Printf.printf "%s\n" (sexpr_of_syscall s)) full_trace
+
+let dump =
+  List.iter (fun s ->
+    let t = string_of_stype s.stype in
+    let i = Int64.to_string s.pid in
+    match s.name with
+    | Some s -> Printf.printf "pid=%s type=%s call=%s\n" i t s
+    | None -> Printf.printf "pid=%s type=%s\n" i t)
+
 let main () =
   Arg.parse opts (fun f -> file := Some f) usage;
 
@@ -41,7 +63,7 @@ let main () =
   end;
 
   begin match read input with
-  | Ok _ -> Printf.eprintf "success\n%!"
+  | Ok trace -> process trace
   | Error msg -> Printf.eprintf "%s\n%!" msg
   end;
 
