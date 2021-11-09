@@ -4,11 +4,12 @@ open Trace
 let opts = []
 let file: string option ref = ref None
 
-let usage = [
+let usage = String.concat "\n" [
   "sparse [strace]";
   "";
+  "input assumed to come from commands of the form:";
+  "  sudo strace -v -s 1024 -f -ttt -T -o [strace] [prog]";
   "output is s-expressions on stdout, good luck"]
-  |> String.concat "\n"
 
 let string_of_lexbuf_p lexbuf =
   let p = Lexing.lexeme_start_p lexbuf in
@@ -40,15 +41,18 @@ let print_syscall s =
 
 let process trace =
   let full_trace = merge_traces (split_trace trace) in
-  List.iter (fun s -> Printf.printf "%s\n" (sexpr_of_syscall s)) full_trace
+  let string_of_syscall s =
+    Printf.printf "%s\n" (sexpr_of_syscall s) in
+  List.iter string_of_syscall full_trace
 
 let dump =
-  List.iter (fun s ->
+  let dump_of_syscall s =
     let t = string_of_stype s.stype in
     let i = Int64.to_string s.pid in
     match s.name with
     | Some s -> Printf.printf "pid=%s type=%s call=%s\n" i t s
-    | None -> Printf.printf "pid=%s type=%s\n" i t)
+    | None -> Printf.printf "pid=%s type=%s\n" i t in
+  List.iter dump_of_syscall
 
 let main () =
   Arg.parse opts (fun f -> file := Some f) usage;
@@ -67,6 +71,6 @@ let main () =
   | Error msg -> Printf.eprintf "%s\n%!" msg
   end;
 
-  0
+  exit 0
 
-let _ = main () |> exit
+let _ = main ()

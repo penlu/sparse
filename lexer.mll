@@ -25,20 +25,22 @@ rule main = parse
   { HEXNUM (Int64.of_string (Lexing.lexeme lexbuf)) }
 | dig+ '.' dig+ '.' dig+ '.' dig+
   { let s = Lexing.lexeme lexbuf in
-    let fields = String.split_on_char '.' s
-      |> List.map int_of_string in
+    let field_strs = String.split_on_char '.' s in
+    let fields = List.map int_of_string field_strs in
     IPV4 fields }
 | "::" (hex+ (ipv6sep hex+)* as s)
-  { let fields = String.split_on_char ':' s
-      |> List.map (fun s -> int_of_string ("0x"^s)) in
+  { let field_strs = String.split_on_char ':' s in
+    let fields = List.map (fun s -> int_of_string ("0x"^s)) field_strs in
     let zeros = List.init (7 - List.length fields) (fun _ -> 0) in
     IPV6 (zeros @ fields) }
 | (hex+ (ipv6sep hex+)+ as s)
-  { let fields = String.split_on_char ':' s in
-    let zeros = List.init (7 - List.length fields) (fun _ -> 0) in
-    IPV6 (List.map (fun s ->
+  { let field_strs = String.split_on_char ':' s in
+    let zeros = List.init (7 - List.length field_strs) (fun _ -> 0) in
+    let add_zeros s =
       if s = "" then zeros
-      else [int_of_string ("0x"^s)]) fields |> List.concat) }
+      else [int_of_string ("0x"^s)] in
+    let fields = List.map add_zeros field_strs in
+    IPV6 (List.concat fields) }
 | "or" { ORLIT }
 | ['A'-'Z''a'-'z''_']['A'-'Z''a'-'z''0'-'9''_']*
   { ID (Lexing.lexeme lexbuf) }
